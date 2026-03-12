@@ -127,6 +127,7 @@ header {
 .field-tag::after { content: ''; flex: 1; height: 1px; background: rgba(45,106,79,0.15); }
 .scan-input { width: 100%; background: transparent; border: none; outline: none; font-family: 'DM Mono', monospace; font-size: 1.3rem; font-weight: 500; color: var(--text); caret-color: var(--accent); }
 .scan-input::placeholder { color: #b5c9bd; font-size: 0.9rem; font-weight: 400; }
+.plot-wrap-active { border-color: #1a5c8a !important; box-shadow: 0 0 0 4px rgba(26,92,138,0.1) !important; }
 .qty-wrap { margin-top: 14px; background: var(--qty-bg); border: 2px solid #f4d5a8; border-radius: 12px; padding: 14px 16px; transition: border-color 0.2s, box-shadow 0.2s; opacity: 0.4; pointer-events: none; }
 .qty-wrap.active-field { opacity: 1; pointer-events: all; border-color: #9c5a1d; box-shadow: 0 0 0 4px rgba(230,126,34,0.1); }
 .qty-tag { font-family: 'DM Mono', monospace; font-size: 0.6rem; font-weight: 500; color: #9c5a1d; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
@@ -319,17 +320,22 @@ td.act  { text-align: right; }
           </div>
           <div class="card-body">
             <div class="field-wrap" id="scanWrap">
-              <div class="field-tag">① código de barras</div>
-              <input id="inputScan" class="scan-input" type="text" placeholder="Escanea aquí..." autocomplete="off" autofocus/>
+              <div class="field-tag">① Obs Unit ID</div>
+              <input id="inputScan" class="scan-input" type="text" placeholder="Escanea Obs Unit ID..." autocomplete="off" autofocus/>
+            </div>
+            <div class="qty-wrap" id="plotWrap">
+              <div class="qty-tag" style="color:#1a5c8a;">② Plot Code</div>
+              <input id="inputPlot" class="qty-input" type="text" placeholder="Escanea Plot Code..." style="caret-color:#1a5c8a;"/>
             </div>
             <div class="qty-wrap" id="qtyWrap">
-              <div class="qty-tag">② cantidad de mazorcas</div>
+              <div class="qty-tag">③ Cantidad de mazorcas</div>
               <input id="inputQty" class="qty-input" type="number" min="0" placeholder="Ej: 47"/>
             </div>
             <div class="steps">
-              <div class="step active" id="step1"><div class="step-num">①</div><div class="step-lbl">Escanear</div></div>
-              <div class="step"        id="step2"><div class="step-num">②</div><div class="step-lbl">Cantidad</div></div>
-              <div class="step"        id="step3"><div class="step-num">✓</div><div class="step-lbl">Guardado</div></div>
+              <div class="step active" id="step1"><div class="step-num">①</div><div class="step-lbl">Obs Unit ID</div></div>
+              <div class="step"        id="step2"><div class="step-num">②</div><div class="step-lbl">Plot Code</div></div>
+              <div class="step"        id="step3"><div class="step-num">③</div><div class="step-lbl">Cantidad</div></div>
+              <div class="step"        id="step4"><div class="step-num">✓</div><div class="step-lbl">Guardado</div></div>
             </div>
             <div class="last-item" id="lastItem">
               <div class="last-code" id="lastCode">—</div>
@@ -359,7 +365,7 @@ td.act  { text-align: right; }
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>#</th><th>Código de Barras</th><th>Mazorcas</th><th>Hora</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Obs Unit ID</th><th>Plot Code</th><th>Mazorcas</th><th>Hora</th><th></th></tr></thead>
             <tbody id="tbody"></tbody>
           </table>
           <div class="empty-state" id="emptyState">
@@ -395,7 +401,7 @@ td.act  { text-align: right; }
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>#</th><th>Código de Barras</th><th>Mazorcas</th><th>Registrado por</th><th>Fecha</th><th>Hora</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Obs Unit ID</th><th>Plot Code</th><th>Mazorcas</th><th>Registrado por</th><th>Fecha</th><th>Hora</th><th></th></tr></thead>
             <tbody id="tbodyAll"></tbody>
           </table>
           <div class="empty-state" id="emptyAll">
@@ -435,6 +441,7 @@ let registros = [];
 let sesion    = null;
 let modo      = "scan";
 let codigoActual = "";
+let plotActual    = "";
 
 const $ = id => document.getElementById(id);
 
@@ -540,19 +547,30 @@ function setTab(tab) {
 // ── SCAN LOGIC ───────────────────────────────────────────────
 function setModo(m) {
   modo = m;
+  // Reset all steps and fields
+  ["step1","step2","step3","step4"].forEach(s => { const el=$(s); if(el) el.classList.remove("active"); });
+  $("qtyWrap").classList.remove("active-field");
+  $("plotWrap").classList.remove("active-field");
+  $("scanWrap").classList.remove("focused");
+
   if (m === "scan") {
-    $("scanWrap").classList.remove("focused");
-    $("qtyWrap").classList.remove("active-field");
-    $("step1").classList.add("active"); $("step2").classList.remove("active"); $("step3").classList.remove("active");
+    $("step1").classList.add("active");
     $("statusDot").classList.remove("waiting");
-    $("statusLabel").textContent = "Listo — escanea un bulk";
+    $("statusLabel").textContent = "① Escanea Obs Unit ID";
     $("inputScan").value = "";
     setTimeout(() => $("inputScan").focus(), 50);
-  } else {
-    $("qtyWrap").classList.add("active-field");
-    $("step1").classList.remove("active"); $("step2").classList.add("active"); $("step3").classList.remove("active");
+  } else if (m === "plot") {
+    $("plotWrap").classList.add("active-field");
+    $("step2").classList.add("active");
     $("statusDot").classList.add("waiting");
-    $("statusLabel").textContent = "Escribe la cantidad de mazorcas";
+    $("statusLabel").textContent = "② Escanea Plot Code";
+    $("inputPlot").value = "";
+    setTimeout(() => $("inputPlot").focus(), 50);
+  } else if (m === "qty") {
+    $("qtyWrap").classList.add("active-field");
+    $("step3").classList.add("active");
+    $("statusDot").classList.add("waiting");
+    $("statusLabel").textContent = "③ Escribe la cantidad de mazorcas";
     $("inputQty").value = "";
     setTimeout(() => $("inputQty").focus(), 50);
   }
@@ -567,6 +585,16 @@ $("inputScan").addEventListener("keydown", e => {
   codigoActual = codigo;
   $("scanWrap").classList.add("flash");
   setTimeout(() => $("scanWrap").classList.remove("flash"), 350);
+  setModo("plot"); e.preventDefault();
+});
+$("inputPlot").addEventListener("keydown", e => {
+  if (e.key === "Escape") { setModo("scan"); return; }
+  if (e.key !== "Enter") return;
+  const plot = $("inputPlot").value.trim();
+  if (!plot) { toast("⚠ Plot Code es obligatorio"); $("inputPlot").select(); return; }
+  plotActual = plot;
+  $("plotWrap").classList.add("flash");
+  setTimeout(() => $("plotWrap").classList.remove("flash"), 350);
   setModo("qty"); e.preventDefault();
 });
 $("inputQty").addEventListener("keydown", e => {
@@ -574,18 +602,18 @@ $("inputQty").addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
   const qty = $("inputQty").value.trim();
   if (!qty || isNaN(qty) || Number(qty) < 0) { toast("⚠ Ingresa una cantidad válida"); $("inputQty").select(); return; }
-  registrar(codigoActual, Number(qty));
-  $("step2").classList.remove("active"); $("step3").classList.add("active");
+  registrar(codigoActual, plotActual, Number(qty));
+  $("step3").classList.remove("active"); $("step4").classList.add("active");
   setTimeout(() => setModo("scan"), 400);
   e.preventDefault();
 });
 
 // ── REGISTRAR ────────────────────────────────────────────────
-async function registrar(codigo, cantidad) {
+async function registrar(codigo, plot, cantidad) {
   const now = new Date();
   const entry = {
     id:      Date.now().toString(36) + Math.random().toString(36).slice(2,5),
-    codigo, cantidad,
+    codigo, plot, cantidad,
     usuario: sesion.username,
     nombre:  sesion.nombre,
     fecha:   now.toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"}),
@@ -593,7 +621,7 @@ async function registrar(codigo, cantidad) {
     ts:      now.getTime()
   };
   registros.push(entry);
-  $("lastCode").textContent = entry.codigo;
+  $("lastCode").textContent = entry.codigo + "  /  " + entry.plot;
   $("lastQty").textContent  = entry.cantidad.toLocaleString();
   $("lastMeta").textContent = entry.fecha + " · " + entry.hora + " · " + entry.nombre;
   $("lastItem").classList.add("show");
@@ -614,6 +642,7 @@ function renderMios(q = "") {
     <tr class="${i===0?'new-row':''}">
       <td class="seq">${registros.indexOf(r)+1}</td>
       <td class="code" title="${r.codigo}">${r.codigo}</td>
+      <td class="code" title="${r.plot||''}">${r.plot||'—'}</td>
       <td class="qty">${Number(r.cantidad).toLocaleString()}</td>
       <td class="time">${r.hora}</td>
       <td class="act"><button class="btn-del" onclick="eliminar('${r.id}')">✕</button></td>
@@ -627,6 +656,7 @@ function renderAll(q = "") {
     <tr>
       <td class="seq">${registros.indexOf(r)+1}</td>
       <td class="code" title="${r.codigo}">${r.codigo}</td>
+      <td class="code" title="${r.plot||''}">${r.plot||'—'}</td>
       <td class="qty">${Number(r.cantidad).toLocaleString()}</td>
       <td class="user">${r.nombre||r.usuario||"—"}</td>
       <td class="time">${r.fecha}</td>
@@ -790,11 +820,11 @@ function exportExcel(todos) {
   if (!datos.length) { toast("No hay registros"); return; }
 
   const cols = todos
-    ? ["#","Código de Barras","Mazorcas","Usuario","Nombre","Fecha","Hora"]
-    : ["#","Código de Barras","Mazorcas","Fecha","Hora"];
+    ? ["#","Obs Unit ID","Plot Code","Mazorcas","Usuario","Nombre","Fecha","Hora"]
+    : ["#","Obs Unit ID","Plot Code","Mazorcas","Fecha","Hora"];
 
   const rows = datos.map((r,i) => {
-    const row = [i+1, r.codigo, Number(r.cantidad)];
+    const row = [i+1, r.codigo, r.plot||"", Number(r.cantidad)];
     if (todos) row.push(r.usuario||"", r.nombre||"");
     row.push(r.fecha, r.hora);
     return row;
@@ -805,8 +835,8 @@ function exportExcel(todos) {
 
   // Column widths
   ws['!cols'] = todos
-    ? [{wch:5},{wch:30},{wch:14},{wch:16},{wch:20},{wch:12},{wch:10}]
-    : [{wch:5},{wch:30},{wch:14},{wch:12},{wch:10}];
+    ? [{wch:5},{wch:30},{wch:30},{wch:14},{wch:16},{wch:20},{wch:12},{wch:10}]
+    : [{wch:5},{wch:30},{wch:30},{wch:14},{wch:12},{wch:10}];
 
   // Header row style (row 0)
   const range = XLSX.utils.decode_range(ws['!ref']);
@@ -851,9 +881,9 @@ function exportExcel(todos) {
 function exportCSV(todos) {
   const datos = todos ? registros : misFiltro();
   if (!datos.length) { toast("No hay registros"); return; }
-  const cols = todos ? ["#","Código","Mazorcas","Usuario","Nombre","Fecha","Hora"] : ["#","Código","Mazorcas","Fecha","Hora"];
+  const cols = todos ? ["#","Obs Unit ID","Plot Code","Mazorcas","Usuario","Nombre","Fecha","Hora"] : ["#","Obs Unit ID","Plot Code","Mazorcas","Fecha","Hora"];
   const rows = datos.map((r,i) => {
-    const row = [i+1, r.codigo, r.cantidad];
+    const row = [i+1, r.codigo, r.plot||"", r.cantidad];
     if (todos) row.push(r.usuario||"", r.nombre||"");
     row.push(r.fecha, r.hora);
     return row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",");
