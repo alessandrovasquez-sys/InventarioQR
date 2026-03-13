@@ -711,6 +711,25 @@ $("inputScan").addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
   const codigo = $("inputScan").value.trim();
   if (!codigo) return;
+
+  // ── Verificar duplicado al escanear ──
+  const codigoUp = codigo.toUpperCase();
+  // Buscar en historial permanente Y en registros de sesión actual
+  const enHistorial = historialData.find(h => (h.codigo||"").toUpperCase() === codigoUp);
+  const enSesion    = registros.find(h => (h.codigo||"").toUpperCase() === codigoUp);
+  const prev = enHistorial || enSesion;
+
+  if (prev) {
+    const info = `por ${prev.nombre||prev.usuario||"?"} el ${prev.fecha} a las ${prev.hora}`;
+    const continuar = confirm(`⚠️ OBS UNIT ID DUPLICADO\n\nEste código ya fue registrado ${info}.\n\n¿Continuar de todas formas?`);
+    if (!continuar) {
+      $("inputScan").value = "";
+      $("inputScan").focus();
+      e.preventDefault();
+      return;
+    }
+  }
+
   codigoActual = codigo;
   $("scanWrap").classList.add("flash");
   setTimeout(() => $("scanWrap").classList.remove("flash"), 350);
@@ -739,24 +758,6 @@ $("inputQty").addEventListener("keydown", e => {
 
 // ── REGISTRAR ────────────────────────────────────────────────
 async function registrar(codigo, plot, cantidad) {
-  // ── Verificar duplicado contra historial local ──
-  const yaExiste = historialData.some(h =>
-    (h.codigo || "").toUpperCase() === codigo.toUpperCase()
-  );
-  if (yaExiste) {
-    // Mostrar advertencia pero permitir continuar o cancelar
-    const prev = historialData.find(h => (h.codigo||"").toUpperCase() === codigo.toUpperCase());
-    const info = prev ? ` (registrado por ${prev.nombre||prev.usuario} el ${prev.fecha})` : "";
-    const continuar = confirm(`⚠️ DUPLICADO DETECTADO\n\nEste Obs Unit ID ya fue registrado${info}.\n\n¿Registrar de todas formas?`);
-    if (!continuar) {
-      // Limpiar y volver al inicio del flujo
-      modo = "scan"; $("inputScan").value = ""; $("inputScan").focus();
-      $("plotRow").style.display = "none"; $("qtyRow").style.display = "none";
-      $("stepScan").classList.add("active"); $("stepPlot").classList.remove("active"); $("stepQty").classList.remove("active");
-      return;
-    }
-  }
-
   const now = new Date();
   const entry = {
     id:      Date.now().toString(36) + Math.random().toString(36).slice(2,5),
